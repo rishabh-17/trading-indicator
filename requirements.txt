@@ -3,4 +3,3 @@ pandas
 numpy
 ta
 plotly
-ß
