@@ -4,9 +4,11 @@ from datetime import datetime, timedelta
 import ccxt
 import yfinance as yf
 
-st.title("📊 Market CSV Data Downloader")
+# Data lists
+CRYPTO_POPULAR = [
+    "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT"
+]
 
-# Famous markets lists
 NIFTY50_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
@@ -20,35 +22,39 @@ NIFTY50_STOCKS = [
     "BPCL.NS", "DIVISLAB.NS", "SHRIRAMFIN.NS", "HAVELLS.NS", "BAJAJHLDNG.NS"
 ]
 
-CRYPTO_POPULAR = [
-    "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT"
+EXCHANGES_ALLOWED = [
+    "Bybit", "Kraken", "Bitstamp", "Coinbase"
 ]
 
-# Selection inputs
-market_type = st.sidebar.selectbox("Market Type", ["Crypto", "Stock"])
+st.title("📊 Market CSV Data Downloader")
 
-if market_type == "Crypto":
-    ticker = st.sidebar.selectbox("Symbol", CRYPTO_POPULAR)
-else:
-    ticker = st.sidebar.selectbox("Symbol", NIFTY50_STOCKS)
+# Sidebar inputs
+market_type = st.sidebar.selectbox("Market Type", ["Crypto", "Stock"])
+exchange_name = st.sidebar.selectbox("Exchange", EXCHANGES_ALLOWED)
 
 timeframe = st.sidebar.selectbox("Candle Timeframe", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"])
 duration_days = st.sidebar.number_input("Duration (days)", min_value=1, max_value=365, value=30)
 
-# Download CSV
+if market_type == "Crypto":
+    symbol = st.sidebar.selectbox("Symbol", CRYPTO_POPULAR)
+else:
+    symbol = st.sidebar.selectbox("Symbol", NIFTY50_STOCKS)
+
+# Fetch + Download
 if st.sidebar.button("🚀 Fetch & Download CSV"):
     try:
         now = datetime.utcnow()
-        since = now - timedelta(days=duration_days)
+        since_time = now - timedelta(days=duration_days)
 
         if market_type == "Crypto":
-            exchange = ccxt.binance()
-            since_ts = exchange.parse8601(since.isoformat())
+            exchange = getattr(ccxt, exchange_name.lower())()
+            exchange.enableRateLimit = True
+            since_ts = exchange.parse8601(since_time.isoformat())
             limit = 1000
             all_bars = []
 
             while True:
-                bars = exchange.fetch_ohlcv(ticker, timeframe, since=since_ts, limit=limit)
+                bars = exchange.fetch_ohlcv(symbol, timeframe, since=since_ts, limit=limit)
                 if not bars:
                     break
                 all_bars += bars
@@ -60,15 +66,13 @@ if st.sidebar.button("🚀 Fetch & Download CSV"):
             df["timestamp"] = df["timestamp"].map(lambda x: datetime.utcfromtimestamp(x / 1000))
 
         else:  # Stock
-            data = yf.Ticker(ticker)
-            df = data.history(start=since, interval="15m")  # Yahoo supports 15m
-
+            data = yf.Ticker(symbol)
+            df = data.history(start=since_time, interval="15m")  # 15m usually works for most stocks
             if df.empty:
-                st.error("No data returned for this range. Try shorter duration.")
+                st.error("No stock data returned for this range. Try shorter duration.")
                 st.stop()
 
             df.reset_index(inplace=True)
-
             df.rename(columns={
                 "Datetime": "timestamp",
                 "Open": "open",
@@ -80,15 +84,14 @@ if st.sidebar.button("🚀 Fetch & Download CSV"):
 
             df["timestamp"] = df["timestamp"].map(lambda x: x.to_pydatetime())
 
-        file_name = ticker.replace("/", "_") + "_" + timeframe + "_" + str(duration_days) + "d.csv"
+        file_name = symbol.replace("/", "_") + "_" + timeframe + "_" + str(duration_days) + "d.csv"
         df.to_csv(file_name, index=False)
 
         st.success(f"✅ CSV Ready: {file_name} | Rows: {len(df)}")
-
         st.dataframe(df.head())
 
         with open(file_name, "rb") as f:
             st.download_button("⬇️ Download CSV", f.read(), file_name=file_name)
 
     except Exception as e:
-        st.error(f"Error: {str(e)}")
+        st.error(f"Error fetching data: {str(e)}")
