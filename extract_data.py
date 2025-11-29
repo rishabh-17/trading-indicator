@@ -6,28 +6,29 @@ exchange = ccxt.binance()
 symbol = "BTC/USDT"
 timeframe = "15m"
 
-# Calculate start of last full month
+# Start of last 365 days
 now = datetime.utcnow()
-first_of_current_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-start_of_last_month = first_of_current_month - timedelta(days=1)
-start_of_last_month = start_of_last_month.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-
-since = exchange.parse8601(start_of_last_month.isoformat())
-limit = 1000
+start_of_year = now - timedelta(days=365)
+since = exchange.parse8601(start_of_year.isoformat())
+limit = 1000  # max candles per API call
 
 all_bars = []
+
 while True:
     bars = exchange.fetch_ohlcv(symbol, timeframe, since=since, limit=limit)
     if not bars:
         break
+    
     all_bars += bars
-    since = bars[-1][0] + 1
-    if len(bars) < limit:
+    since = bars[-1][0] + 1  # move cursor forward
+    
+    if len(bars) < limit:  # exit if last batch
         break
 
-df = pd.DataFrame(all_bars, columns=["timestamp","open","high","low","close","volume"])
-df["timestamp"] = df["timestamp"].map(lambda x: datetime.utcfromtimestamp(x/1000))
+df = pd.DataFrame(all_bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
+df["timestamp"] = df["timestamp"].map(lambda x: datetime.utcfromtimestamp(x / 1000))
 
-file_name = "btc_usd_15m_whole_month.csv"
+file_name = "btc_usd_15m_whole_year.csv"
 df.to_csv(file_name, index=False)
+
 print("Saved:", file_name, "| Rows:", len(df))
