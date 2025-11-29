@@ -4,51 +4,43 @@ from datetime import datetime, timedelta
 import ccxt
 import yfinance as yf
 
-# Data lists
+# Popular crypto & stocks for dropdown
 CRYPTO_POPULAR = [
-    "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "ADA/USDT"
+    "BTC/USDT", "ETH/USDT", "BNB/USDT", "XRP/USDT", "SOL/USDT"
 ]
 
 NIFTY50_STOCKS = [
     "RELIANCE.NS", "TCS.NS", "HDFCBANK.NS", "INFY.NS", "ICICIBANK.NS",
     "HINDUNILVR.NS", "ITC.NS", "SBIN.NS", "BHARTIARTL.NS", "KOTAKBANK.NS",
     "LT.NS", "ASIANPAINT.NS", "AXISBANK.NS", "MARUTI.NS", "BAJFINANCE.NS",
-    "SUNPHARMA.NS", "HCLTECH.NS", "TITAN.NS", "ULTRACEMCO.NS", "NTPC.NS",
-    "POWERGRID.NS", "TECHM.NS", "M&M.NS", "TATAMOTORS.NS", "ADANIENT.NS",
-    "ADANIPORTS.NS", "ONGC.NS", "WIPRO.NS", "BAJAJFINSV.NS", "NESTLEIND.NS",
-    "JSWSTEEL.NS", "COALINDIA.NS", "INDUSINDBK.NS", "HDFCLIFE.NS", "BAJAJ-AUTO.NS",
-    "TATASTEEL.NS", "GRASIM.NS", "CIPLA.NS", "DRREDDY.NS", "BRITANNIA.NS",
-    "HEROMOTOCO.NS", "EICHERMOT.NS", "TATACONSUM.NS", "SBILIFE.NS", "APOLLOHOSP.NS",
-    "BPCL.NS", "DIVISLAB.NS", "SHRIRAMFIN.NS", "HAVELLS.NS", "BAJAJHLDNG.NS"
+    "SUNPHARMA.NS", "TITAN.NS", "ULTRACEMCO.NS", "NTPC.NS", "POWERGRID.NS",
+    "M&M.NS", "TATAMOTORS.NS", "WIPRO.NS", "HCLTECH.NS", "TECHM.NS"
 ]
 
-EXCHANGES_ALLOWED = [
-    "Bybit", "Kraken", "Bitstamp", "Coinbase"
-]
+# Supported crypto exchanges
+EXCHANGES_ALLOWED = ["Kraken"]  # ← Binance & Bybit removed to avoid 451/403 India block
 
 st.title("📊 Market CSV Data Downloader")
 
-# Sidebar inputs
+# Sidebar selection
 market_type = st.sidebar.selectbox("Market Type", ["Crypto", "Stock"])
-exchange_name = st.sidebar.selectbox("Exchange", EXCHANGES_ALLOWED)
-
 timeframe = st.sidebar.selectbox("Candle Timeframe", ["1m", "5m", "15m", "30m", "1h", "4h", "1d"])
 duration_days = st.sidebar.number_input("Duration (days)", min_value=1, max_value=365, value=30)
 
 if market_type == "Crypto":
     symbol = st.sidebar.selectbox("Symbol", CRYPTO_POPULAR)
+    exchange = ccxt.kraken()  # ← Will NOT throw 451/403 in India
+    use_exchange = True
 else:
     symbol = st.sidebar.selectbox("Symbol", NIFTY50_STOCKS)
+    use_exchange = False
 
-# Fetch + Download
 if st.sidebar.button("🚀 Fetch & Download CSV"):
     try:
         now = datetime.utcnow()
         since_time = now - timedelta(days=duration_days)
 
-        if market_type == "Crypto":
-            exchange = getattr(ccxt, exchange_name.lower())()
-            exchange.enableRateLimit = True
+        if use_exchange:
             since_ts = exchange.parse8601(since_time.isoformat())
             limit = 1000
             all_bars = []
@@ -64,12 +56,12 @@ if st.sidebar.button("🚀 Fetch & Download CSV"):
 
             df = pd.DataFrame(all_bars, columns=["timestamp", "open", "high", "low", "close", "volume"])
             df["timestamp"] = df["timestamp"].map(lambda x: datetime.utcfromtimestamp(x / 1000))
-
-        else:  # Stock
+        
+        else:
             data = yf.Ticker(symbol)
-            df = data.history(start=since_time, interval="15m")  # 15m usually works for most stocks
+            df = data.history(start=since_time, interval="15m")
             if df.empty:
-                st.error("No stock data returned for this range. Try shorter duration.")
+                st.error("No stock data returned. Reduce duration.")
                 st.stop()
 
             df.reset_index(inplace=True)
@@ -81,7 +73,6 @@ if st.sidebar.button("🚀 Fetch & Download CSV"):
                 "Close": "close",
                 "Volume": "volume"
             }, inplace=True)
-
             df["timestamp"] = df["timestamp"].map(lambda x: x.to_pydatetime())
 
         file_name = symbol.replace("/", "_") + "_" + timeframe + "_" + str(duration_days) + "d.csv"
